@@ -31,20 +31,11 @@ func TestPartitionKey(t *testing.T) {
 
 	k = KinesisOutput{
 		Partition: &Partition{
-			Method:  "tag",
-			Key:     "doesnotexist",
-			Default: "somedefault",
-		},
-	}
-	assert.Equal("somedefault", k.getPartitionKey(testPoint), "PartitionKey should use default")
-
-	k = KinesisOutput{
-		Partition: &Partition{
 			Method: "tag",
 			Key:    "doesnotexist",
 		},
 	}
-	assert.Equal("telegraf", k.getPartitionKey(testPoint), "PartitionKey should be telegraf")
+	assert.Equal("", k.getPartitionKey(testPoint), "PartitionKey should be value of ''")
 
 	k = KinesisOutput{
 		Partition: &Partition{
@@ -68,7 +59,7 @@ func TestPartitionKey(t *testing.T) {
 	partitionKey := k.getPartitionKey(testPoint)
 	u, err := uuid.FromString(partitionKey)
 	assert.Nil(err, "Issue parsing UUID")
-	assert.Equal(byte(4), u.Version(), "PartitionKey should be UUIDv4")
+	assert.Equal(uint(4), u.Version(), "PartitionKey should be UUIDv4")
 
 	k = KinesisOutput{
 		PartitionKey: "-",
@@ -81,5 +72,6 @@ func TestPartitionKey(t *testing.T) {
 	partitionKey = k.getPartitionKey(testPoint)
 	u, err = uuid.FromString(partitionKey)
 	assert.Nil(err, "Issue parsing UUID")
-	assert.Equal(byte(4), u.Version(), "PartitionKey should be UUIDv4")
+	assert.Equal(uint(4), u.Version(), "PartitionKey should be UUIDv4")
+
 }

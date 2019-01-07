@@ -6,7 +6,6 @@ import (
 
 	"collectd.org/api"
 	"collectd.org/network"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
@@ -33,7 +32,7 @@ type testCase struct {
 
 var singleMetric = testCase{
 	[]api.ValueList{
-		{
+		api.ValueList{
 			Identifier: api.Identifier{
 				Host:           "xyzzy",
 				Plugin:         "cpu",
@@ -48,7 +47,7 @@ var singleMetric = testCase{
 		},
 	},
 	[]metricData{
-		{
+		metricData{
 			"cpu_value",
 			map[string]string{
 				"type_instance": "user",
@@ -65,7 +64,7 @@ var singleMetric = testCase{
 
 var multiMetric = testCase{
 	[]api.ValueList{
-		{
+		api.ValueList{
 			Identifier: api.Identifier{
 				Host:           "xyzzy",
 				Plugin:         "cpu",
@@ -77,11 +76,11 @@ var multiMetric = testCase{
 				api.Derive(42),
 				api.Gauge(42),
 			},
-			DSNames: []string{"t1", "t2"},
+			DSNames: []string(nil),
 		},
 	},
 	[]metricData{
-		{
+		metricData{
 			"cpu_0",
 			map[string]string{
 				"type_instance": "user",
@@ -93,7 +92,7 @@ var multiMetric = testCase{
 				"value": float64(42),
 			},
 		},
-		{
+		metricData{
 			"cpu_1",
 			map[string]string{
 				"type_instance": "user",
@@ -109,7 +108,7 @@ var multiMetric = testCase{
 }
 
 func TestNewCollectdParser(t *testing.T) {
-	parser, err := NewCollectdParser("", "", []string{}, "join")
+	parser, err := NewCollectdParser("", "", []string{})
 	require.Nil(t, err)
 	require.Equal(t, parser.popts.SecurityLevel, network.None)
 	require.NotNil(t, parser.popts.PasswordLookup)
@@ -132,19 +131,6 @@ func TestParse(t *testing.T) {
 
 		assertEqualMetrics(t, tc.expected, metrics)
 	}
-}
-
-func TestParseMultiValueSplit(t *testing.T) {
-	buf, err := writeValueList(multiMetric.vl)
-	require.Nil(t, err)
-	bytes, err := buf.Bytes()
-	require.Nil(t, err)
-
-	parser := &CollectdParser{ParseMultiValue: "split"}
-	metrics, err := parser.Parse(bytes)
-	require.Nil(t, err)
-
-	assert.Equal(t, 2, len(metrics))
 }
 
 func TestParse_DefaultTags(t *testing.T) {
@@ -280,7 +266,7 @@ func TestParseLine(t *testing.T) {
 	bytes, err := buf.Bytes()
 	require.Nil(t, err)
 
-	parser, err := NewCollectdParser("", "", []string{}, "split")
+	parser, err := NewCollectdParser("", "", []string{})
 	require.Nil(t, err)
 	metric, err := parser.ParseLine(string(bytes))
 	require.Nil(t, err)

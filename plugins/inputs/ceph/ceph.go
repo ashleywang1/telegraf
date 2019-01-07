@@ -278,7 +278,7 @@ func flatten(data interface{}) []*metric {
 
 	switch val := data.(type) {
 	case float64:
-		metrics = []*metric{{make([]string, 0, 1), val}}
+		metrics = []*metric{&metric{make([]string, 0, 1), val}}
 	case map[string]interface{}:
 		metrics = make([]*metric, 0, len(val))
 		for k, v := range val {
@@ -294,7 +294,6 @@ func flatten(data interface{}) []*metric {
 	return metrics
 }
 
-// exec executes the 'ceph' command with the supplied arguments, returning JSON formatted output
 func (c *Ceph) exec(command string) (string, error) {
 	cmdArgs := []string{"--conf", c.CephConfig, "--name", c.CephUser, "--format", "json"}
 	cmdArgs = append(cmdArgs, strings.Split(command, " ")...)
@@ -318,149 +317,145 @@ func (c *Ceph) exec(command string) (string, error) {
 	return output, nil
 }
 
-// CephStatus is used to unmarshal "ceph -s" output
-type CephStatus struct {
-	OSDMap struct {
-		OSDMap struct {
-			Epoch          float64 `json:"epoch"`
-			NumOSDs        float64 `json:"num_osds"`
-			NumUpOSDs      float64 `json:"num_up_osds"`
-			NumInOSDs      float64 `json:"num_in_osds"`
-			Full           bool    `json:"full"`
-			NearFull       bool    `json:"nearfull"`
-			NumRemappedPGs float64 `json:"num_remapped_pgs"`
-		} `json:"osdmap"`
-	} `json:"osdmap"`
-	PGMap struct {
-		PGsByState []struct {
-			StateName string  `json:"state_name"`
-			Count     float64 `json:"count"`
-		} `json:"pgs_by_state"`
-		Version       float64 `json:"version"`
-		NumPGs        float64 `json:"num_pgs"`
-		DataBytes     float64 `json:"data_bytes"`
-		BytesUsed     float64 `json:"bytes_used"`
-		BytesAvail    float64 `json:"bytes_avail"`
-		BytesTotal    float64 `json:"bytes_total"`
-		ReadBytesSec  float64 `json:"read_bytes_sec"`
-		WriteBytesSec float64 `json:"write_bytes_sec"`
-		OpPerSec      float64 `json:"op_per_sec"` // This field is no longer reported in ceph 10 and later
-		ReadOpPerSec  float64 `json:"read_op_per_sec"`
-		WriteOpPerSec float64 `json:"write_op_per_sec"`
-	} `json:"pgmap"`
-}
-
-// decodeStatus decodes the output of 'ceph -s'
 func decodeStatus(acc telegraf.Accumulator, input string) error {
-	data := &CephStatus{}
-	if err := json.Unmarshal([]byte(input), data); err != nil {
+	data := make(map[string]interface{})
+	err := json.Unmarshal([]byte(input), &data)
+	if err != nil {
 		return fmt.Errorf("failed to parse json: '%s': %v", input, err)
 	}
 
-	decoders := []func(telegraf.Accumulator, *CephStatus) error{
-		decodeStatusOsdmap,
-		decodeStatusPgmap,
-		decodeStatusPgmapState,
+	err = decodeStatusOsdmap(acc, data)
+	if err != nil {
+		return err
 	}
 
-	for _, decoder := range decoders {
-		if err := decoder(acc, data); err != nil {
-			return err
-		}
+	err = decodeStatusPgmap(acc, data)
+	if err != nil {
+		return err
+	}
+
+	err = decodeStatusPgmapState(acc, data)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// decodeStatusOsdmap decodes the OSD map portion of the output of 'ceph -s'
-func decodeStatusOsdmap(acc telegraf.Accumulator, data *CephStatus) error {
-	fields := map[string]interface{}{
-		"epoch":            data.OSDMap.OSDMap.Epoch,
-		"num_osds":         data.OSDMap.OSDMap.NumOSDs,
-		"num_up_osds":      data.OSDMap.OSDMap.NumUpOSDs,
-		"num_in_osds":      data.OSDMap.OSDMap.NumInOSDs,
-		"full":             data.OSDMap.OSDMap.Full,
-		"nearfull":         data.OSDMap.OSDMap.NearFull,
-		"num_remapped_pgs": data.OSDMap.OSDMap.NumRemappedPGs,
+func decodeStatusOsdmap(acc telegraf.Accumulator, data map[string]interface{}) error {
+	osdmap, ok := data["osdmap"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARNING %s - unable to decode osdmap", measurement)
+	}
+	fields, ok := osdmap["osdmap"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARNING %s - unable to decode osdmap", measurement)
 	}
 	acc.AddFields("ceph_osdmap", fields, map[string]string{})
 	return nil
 }
 
-// decodeStatusPgmap decodes the PG map portion of the output of 'ceph -s'
-func decodeStatusPgmap(acc telegraf.Accumulator, data *CephStatus) error {
-	fields := map[string]interface{}{
-		"version":          data.PGMap.Version,
-		"num_pgs":          data.PGMap.NumPGs,
-		"data_bytes":       data.PGMap.DataBytes,
-		"bytes_used":       data.PGMap.BytesUsed,
-		"bytes_avail":      data.PGMap.BytesAvail,
-		"bytes_total":      data.PGMap.BytesTotal,
-		"read_bytes_sec":   data.PGMap.ReadBytesSec,
-		"write_bytes_sec":  data.PGMap.WriteBytesSec,
-		"op_per_sec":       data.PGMap.OpPerSec, // This field is no longer reported in ceph 10 and later
-		"read_op_per_sec":  data.PGMap.ReadOpPerSec,
-		"write_op_per_sec": data.PGMap.WriteOpPerSec,
+func decodeStatusPgmap(acc telegraf.Accumulator, data map[string]interface{}) error {
+	pgmap, ok := data["pgmap"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARNING %s - unable to decode pgmap", measurement)
+	}
+	fields := make(map[string]interface{})
+	for key, value := range pgmap {
+		switch value.(type) {
+		case float64:
+			fields[key] = value
+		}
 	}
 	acc.AddFields("ceph_pgmap", fields, map[string]string{})
 	return nil
 }
 
-// decodeStatusPgmapState decodes the PG map state portion of the output of 'ceph -s'
-func decodeStatusPgmapState(acc telegraf.Accumulator, data *CephStatus) error {
-	for _, pgState := range data.PGMap.PGsByState {
+func extractPgmapStates(data map[string]interface{}) ([]interface{}, error) {
+	const key = "pgs_by_state"
+
+	pgmap, ok := data["pgmap"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("WARNING %s - unable to decode pgmap", measurement)
+	}
+
+	s, ok := pgmap[key]
+	if !ok {
+		return nil, fmt.Errorf("WARNING %s - pgmap is missing the %s field", measurement, key)
+	}
+
+	states, ok := s.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("WARNING %s - pgmap[%s] is not a list", measurement, key)
+	}
+	return states, nil
+}
+
+func decodeStatusPgmapState(acc telegraf.Accumulator, data map[string]interface{}) error {
+	states, err := extractPgmapStates(data)
+	if err != nil {
+		return err
+	}
+	for _, state := range states {
+		stateMap, ok := state.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode pg state", measurement)
+		}
+		stateName, ok := stateMap["state_name"].(string)
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode pg state name", measurement)
+		}
+		stateCount, ok := stateMap["count"].(float64)
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode pg state count", measurement)
+		}
+
 		tags := map[string]string{
-			"state": pgState.StateName,
+			"state": stateName,
 		}
 		fields := map[string]interface{}{
-			"count": pgState.Count,
+			"count": stateCount,
 		}
 		acc.AddFields("ceph_pgmap_state", fields, tags)
 	}
 	return nil
 }
 
-// CephDF is used to unmarshal 'ceph df' output
-type CephDf struct {
-	Stats struct {
-		TotalSpace float64 `json:"total_space"`
-		TotalUsed  float64 `json:"total_used"`
-		TotalAvail float64 `json:"total_avail"`
-	} `json:"stats"`
-	Pools []struct {
-		Name  string `json:"name"`
-		Stats struct {
-			KBUsed    float64 `json:"kb_used"`
-			BytesUsed float64 `json:"bytes_used"`
-			Objects   float64 `json:"objects"`
-		} `json:"stats"`
-	} `json:"pools"`
-}
-
-// decodeDf decodes the output of 'ceph df'
 func decodeDf(acc telegraf.Accumulator, input string) error {
-	data := &CephDf{}
-	if err := json.Unmarshal([]byte(input), data); err != nil {
+	data := make(map[string]interface{})
+	err := json.Unmarshal([]byte(input), &data)
+	if err != nil {
 		return fmt.Errorf("failed to parse json: '%s': %v", input, err)
 	}
 
 	// ceph.usage: records global utilization and number of objects
-	fields := map[string]interface{}{
-		"total_space": data.Stats.TotalSpace,
-		"total_used":  data.Stats.TotalUsed,
-		"total_avail": data.Stats.TotalAvail,
+	stats_fields, ok := data["stats"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARNING %s - unable to decode df stats", measurement)
 	}
-	acc.AddFields("ceph_usage", fields, map[string]string{})
+	acc.AddFields("ceph_usage", stats_fields, map[string]string{})
 
 	// ceph.pool.usage: records per pool utilization and number of objects
-	for _, pool := range data.Pools {
-		tags := map[string]string{
-			"name": pool.Name,
+	pools, ok := data["pools"].([]interface{})
+	if !ok {
+		return fmt.Errorf("WARNING %s - unable to decode df pools", measurement)
+	}
+
+	for _, pool := range pools {
+		pool_map, ok := pool.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode df pool", measurement)
 		}
-		fields := map[string]interface{}{
-			"kb_used":    pool.Stats.KBUsed,
-			"bytes_used": pool.Stats.BytesUsed,
-			"objects":    pool.Stats.Objects,
+		pool_name, ok := pool_map["name"].(string)
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode df pool name", measurement)
+		}
+		fields, ok := pool_map["stats"].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode df pool stats", measurement)
+		}
+		tags := map[string]string{
+			"name": pool_name,
 		}
 		acc.AddFields("ceph_pool_usage", fields, tags)
 	}
@@ -468,44 +463,36 @@ func decodeDf(acc telegraf.Accumulator, input string) error {
 	return nil
 }
 
-// CephOSDPoolStats is used to unmarshal 'ceph osd pool stats' output
-type CephOSDPoolStats []struct {
-	PoolName     string `json:"pool_name"`
-	ClientIORate struct {
-		ReadBytesSec  float64 `json:"read_bytes_sec"`
-		WriteBytesSec float64 `json:"write_bytes_sec"`
-		OpPerSec      float64 `json:"op_per_sec"` // This field is no longer reported in ceph 10 and later
-		ReadOpPerSec  float64 `json:"read_op_per_sec"`
-		WriteOpPerSec float64 `json:"write_op_per_sec"`
-	} `json:"client_io_rate"`
-	RecoveryRate struct {
-		RecoveringObjectsPerSec float64 `json:"recovering_objects_per_sec"`
-		RecoveringBytesPerSec   float64 `json:"recovering_bytes_per_sec"`
-		RecoveringKeysPerSec    float64 `json:"recovering_keys_per_sec"`
-	} `json:"recovery_rate"`
-}
-
-// decodeOsdPoolStats decodes the output of 'ceph osd pool stats'
 func decodeOsdPoolStats(acc telegraf.Accumulator, input string) error {
-	data := CephOSDPoolStats{}
-	if err := json.Unmarshal([]byte(input), &data); err != nil {
+	data := make([]map[string]interface{}, 0)
+	err := json.Unmarshal([]byte(input), &data)
+	if err != nil {
 		return fmt.Errorf("failed to parse json: '%s': %v", input, err)
 	}
 
 	// ceph.pool.stats: records pre pool IO and recovery throughput
 	for _, pool := range data {
-		tags := map[string]string{
-			"name": pool.PoolName,
+		pool_name, ok := pool["pool_name"].(string)
+		if !ok {
+			return fmt.Errorf("WARNING %s - unable to decode osd pool stats name", measurement)
 		}
-		fields := map[string]interface{}{
-			"read_bytes_sec":             pool.ClientIORate.ReadBytesSec,
-			"write_bytes_sec":            pool.ClientIORate.WriteBytesSec,
-			"op_per_sec":                 pool.ClientIORate.OpPerSec, // This field is no longer reported in ceph 10 and later
-			"read_op_per_sec":            pool.ClientIORate.ReadOpPerSec,
-			"write_op_per_sec":           pool.ClientIORate.WriteOpPerSec,
-			"recovering_objects_per_sec": pool.RecoveryRate.RecoveringObjectsPerSec,
-			"recovering_bytes_per_sec":   pool.RecoveryRate.RecoveringBytesPerSec,
-			"recovering_keys_per_sec":    pool.RecoveryRate.RecoveringKeysPerSec,
+		// Note: the 'recovery' object looks broken (in hammer), so it's omitted
+		objects := []string{
+			"client_io_rate",
+			"recovery_rate",
+		}
+		fields := make(map[string]interface{})
+		for _, object := range objects {
+			perfdata, ok := pool[object].(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("WARNING %s - unable to decode osd pool stats", measurement)
+			}
+			for key, value := range perfdata {
+				fields[key] = value
+			}
+		}
+		tags := map[string]string{
+			"name": pool_name,
 		}
 		acc.AddFields("ceph_pool_stats", fields, tags)
 	}

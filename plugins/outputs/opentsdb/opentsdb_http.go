@@ -26,7 +26,6 @@ type openTSDBHttp struct {
 	Scheme    string
 	User      *url.Userinfo
 	BatchSize int
-	Path      string
 	Debug     bool
 
 	metricCounter int
@@ -124,7 +123,7 @@ func (o *openTSDBHttp) flush() error {
 		Scheme: o.Scheme,
 		User:   o.User,
 		Host:   fmt.Sprintf("%s:%d", o.Host, o.Port),
-		Path:   o.Path,
+		Path:   "/api/put",
 	}
 
 	if o.Debug {

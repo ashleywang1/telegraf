@@ -141,8 +141,9 @@ func (n *NetResponse) UDPGather() (tags map[string]string, fields map[string]int
 	start := time.Now()
 	// Resolving
 	udpAddr, err := net.ResolveUDPAddr("udp", n.Address)
+	LocalAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	// Connecting
-	conn, err := net.DialUDP("udp", nil, udpAddr)
+	conn, err := net.DialUDP("udp", LocalAddr, udpAddr)
 	// Handle error
 	if err != nil {
 		setResult(ConnectionFailed, fields, tags, n.Expect)

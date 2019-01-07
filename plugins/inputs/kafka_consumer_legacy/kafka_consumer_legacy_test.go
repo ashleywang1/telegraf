@@ -125,10 +125,7 @@ func TestRunParserAndGatherJSON(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	k.parser, _ = parsers.NewParser(&parsers.Config{
-		DataFormat: "json",
-		MetricName: "kafka_json_test",
-	})
+	k.parser, _ = parsers.NewJSONParser("kafka_json_test", []string{}, nil)
 	go k.receiver()
 	in <- saramaMsg(testMsgJSON)
 	acc.Wait(1)

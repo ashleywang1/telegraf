@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +55,7 @@ func TestSocketListener_unix_tls(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "telegraf")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpdir)
-	sock := filepath.Join(tmpdir, "sl.TestSocketListener_unix_tls.sock")
+	sock := filepath.Join(tmpdir, "socket_listener.TestSocketListener_unix_tls.sock")
 
 	sl := newSocketListener()
 	sl.ServiceAddress = "unix://" + sock
@@ -82,7 +81,7 @@ func TestSocketListener_tcp(t *testing.T) {
 
 	sl := newSocketListener()
 	sl.ServiceAddress = "tcp://127.0.0.1:0"
-	sl.ReadBufferSize = internal.Size{Size: 1024}
+	sl.ReadBufferSize = 1024
 
 	acc := &testutil.Accumulator{}
 	err := sl.Start(acc)
@@ -100,7 +99,7 @@ func TestSocketListener_udp(t *testing.T) {
 
 	sl := newSocketListener()
 	sl.ServiceAddress = "udp://127.0.0.1:0"
-	sl.ReadBufferSize = internal.Size{Size: 1024}
+	sl.ReadBufferSize = 1024
 
 	acc := &testutil.Accumulator{}
 	err := sl.Start(acc)
@@ -117,14 +116,14 @@ func TestSocketListener_unix(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "telegraf")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpdir)
-	sock := filepath.Join(tmpdir, "sl.TestSocketListener_unix.sock")
+	sock := filepath.Join(tmpdir, "socket_listener.TestSocketListener_unix.sock")
 
 	defer testEmptyLog(t)()
 
 	os.Create(sock)
 	sl := newSocketListener()
 	sl.ServiceAddress = "unix://" + sock
-	sl.ReadBufferSize = internal.Size{Size: 1024}
+	sl.ReadBufferSize = 1024
 
 	acc := &testutil.Accumulator{}
 	err = sl.Start(acc)
@@ -141,14 +140,14 @@ func TestSocketListener_unixgram(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "telegraf")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpdir)
-	sock := filepath.Join(tmpdir, "sl.TestSocketListener_unixgram.sock")
+	sock := filepath.Join(tmpdir, "socket_listener.TestSocketListener_unixgram.sock")
 
 	defer testEmptyLog(t)()
 
 	os.Create(sock)
 	sl := newSocketListener()
 	sl.ServiceAddress = "unixgram://" + sock
-	sl.ReadBufferSize = internal.Size{Size: 1024}
+	sl.ReadBufferSize = 1024
 
 	acc := &testutil.Accumulator{}
 	err = sl.Start(acc)

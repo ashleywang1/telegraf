@@ -9,7 +9,9 @@ import (
 	"github.com/influxdata/telegraf/plugins/serializers/graphite"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 	"github.com/influxdata/telegraf/plugins/serializers/json"
-	"github.com/influxdata/telegraf/plugins/serializers/splunkmetric"
+	"github.com/influxdata/telegraf/plugins/serializers/tableprov_csv"
+	"github.com/influxdata/telegraf/plugins/serializers/tableprov_csv_delimiting"
+	"github.com/influxdata/telegraf/utils"
 )
 
 // SerializerOutput is an interface for output plugins that are able to
@@ -36,7 +38,7 @@ type Serializer interface {
 // Config is a struct that covers the data types needed for all serializer types,
 // and can be used to instantiate _any_ of the serializers.
 type Config struct {
-	// Dataformat can be one of: influx, graphite, or json
+	// Dataformat can be one of: influx, graphite, tableprov_csv, or json
 	DataFormat string
 
 	// Support tags in graphite protocol
@@ -61,9 +63,6 @@ type Config struct {
 
 	// Timestamp units to use for JSON formatted output
 	TimestampUnits time.Duration
-
-	// Include HEC routing fields for splunkmetric output
-	HecRouting bool
 }
 
 // NewSerializer a Serializer interface based on the given config.
@@ -71,14 +70,16 @@ func NewSerializer(config *Config) (Serializer, error) {
 	var err error
 	var serializer Serializer
 	switch config.DataFormat {
+	case "tableprov_csv_delimiting":
+		serializer, err = NewTableprovCSVSelfDelimitingSerializer()
+	case "tableprov_csv":
+		serializer, err = NewTableprovCSVSerializer()
 	case "influx":
 		serializer, err = NewInfluxSerializerConfig(config)
 	case "graphite":
 		serializer, err = NewGraphiteSerializer(config.Prefix, config.Template, config.GraphiteTagSupport)
 	case "json":
 		serializer, err = NewJsonSerializer(config.TimestampUnits)
-	case "splunkmetric":
-		serializer, err = NewSplunkmetricSerializer(config.HecRouting)
 	default:
 		err = fmt.Errorf("Invalid data format: %s", config.DataFormat)
 	}
@@ -87,10 +88,6 @@ func NewSerializer(config *Config) (Serializer, error) {
 
 func NewJsonSerializer(timestampUnits time.Duration) (Serializer, error) {
 	return json.NewSerializer(timestampUnits)
-}
-
-func NewSplunkmetricSerializer(splunkmetric_hec_routing bool) (Serializer, error) {
-	return splunkmetric.NewSerializer(splunkmetric_hec_routing)
 }
 
 func NewInfluxSerializerConfig(config *Config) (Serializer, error) {
@@ -120,5 +117,17 @@ func NewGraphiteSerializer(prefix, template string, tag_support bool) (Serialize
 		Prefix:     prefix,
 		Template:   template,
 		TagSupport: tag_support,
+	}, nil
+}
+
+func NewTableprovCSVSelfDelimitingSerializer() (Serializer, error) {
+	return &tableprov_csv_delimiting.TableprovCSVSelfDelimitingSerializer{
+		HostIP: utils.GetIP(),
+	}, nil
+}
+
+func NewTableprovCSVSerializer() (Serializer, error) {
+	return &tableprov_csv.TableprovCSVSerializer{
+		HostIP: utils.GetIP(),
 	}, nil
 }

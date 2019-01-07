@@ -3,7 +3,6 @@ package http
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -18,19 +17,17 @@ import (
 )
 
 type HTTP struct {
-	URLs            []string `toml:"urls"`
-	Method          string   `toml:"method"`
-	Body            string   `toml:"body"`
-	ContentEncoding string   `toml:"content_encoding"`
+	URLs   []string `toml:"urls"`
+	Method string
 
-	Headers map[string]string `toml:"headers"`
+	Headers map[string]string
 
 	// HTTP Basic Auth Credentials
-	Username string `toml:"username"`
-	Password string `toml:"password"`
+	Username string
+	Password string
 	tls.ClientConfig
 
-	Timeout internal.Duration `toml:"timeout"`
+	Timeout internal.Duration
 
 	client *http.Client
 
@@ -55,12 +52,8 @@ var sampleConfig = `
   # username = "username"
   # password = "pa$$word"
 
-  ## HTTP entity-body to send with POST/PUT requests.
-  # body = ""
-
-  ## HTTP Content-Encoding for write request body, can be set to "gzip" to
-  ## compress body or "identity" to apply no encoding.
-  # content_encoding = "identity"
+  ## Tag all metrics with the url
+  # tag_url = true
 
   ## Optional TLS Config
   # tls_ca = "/etc/telegraf/ca.pem"
@@ -142,18 +135,9 @@ func (h *HTTP) gatherURL(
 	acc telegraf.Accumulator,
 	url string,
 ) error {
-	body, err := makeRequestBodyReader(h.ContentEncoding, h.Body)
+	request, err := http.NewRequest(h.Method, url, nil)
 	if err != nil {
 		return err
-	}
-
-	request, err := http.NewRequest(h.Method, url, body)
-	if err != nil {
-		return err
-	}
-
-	if h.ContentEncoding == "gzip" {
-		request.Header.Set("Content-Encoding", "gzip")
 	}
 
 	for k, v := range h.Headers {
@@ -200,18 +184,6 @@ func (h *HTTP) gatherURL(
 	}
 
 	return nil
-}
-
-func makeRequestBodyReader(contentEncoding, body string) (io.Reader, error) {
-	var err error
-	var reader io.Reader = strings.NewReader(body)
-	if contentEncoding == "gzip" {
-		reader, err = internal.CompressWithGzip(reader)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return reader, nil
 }
 
 func init() {

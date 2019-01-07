@@ -35,8 +35,8 @@ For an introduction to AMQP see:
   ## If true, exchange will be passively declared.
   # exchange_declare_passive = false
 
-  ## Exchange durability can be either "transient" or "durable".
-  # exchange_durability = "durable"
+  ## If true, exchange will be created as a durable exchange.
+  # exchange_durable = true
 
   ## Additional exchange arguments.
   # exchange_arguments = { }

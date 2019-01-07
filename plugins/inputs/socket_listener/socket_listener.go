@@ -2,7 +2,6 @@ package socket_listener
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -10,7 +9,10 @@ import (
 	"os"
 	"strings"
 	"sync"
+
 	"time"
+
+	"crypto/tls"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
@@ -45,9 +47,9 @@ func (ssl *streamSocketListener) listen() {
 			break
 		}
 
-		if ssl.ReadBufferSize.Size > 0 {
+		if ssl.ReadBufferSize > 0 {
 			if srb, ok := c.(setReadBufferer); ok {
-				srb.SetReadBuffer(int(ssl.ReadBufferSize.Size))
+				srb.SetReadBuffer(ssl.ReadBufferSize)
 			} else {
 				log.Printf("W! Unable to set read buffer on a %s socket", ssl.sockType)
 			}
@@ -118,7 +120,7 @@ func (ssl *streamSocketListener) read(c net.Conn) {
 			continue
 		}
 		for _, m := range metrics {
-			ssl.AddMetric(m)
+			ssl.AddFields(m.Name(), m.Fields(), m.Tags(), m.Time())
 		}
 	}
 
@@ -154,7 +156,7 @@ func (psl *packetSocketListener) listen() {
 			continue
 		}
 		for _, m := range metrics {
-			psl.AddMetric(m)
+			psl.AddFields(m.Name(), m.Fields(), m.Tags(), m.Time())
 		}
 	}
 }
@@ -162,7 +164,7 @@ func (psl *packetSocketListener) listen() {
 type SocketListener struct {
 	ServiceAddress  string             `toml:"service_address"`
 	MaxConnections  int                `toml:"max_connections"`
-	ReadBufferSize  internal.Size      `toml:"read_buffer_size"`
+	ReadBufferSize  int                `toml:"read_buffer_size"`
 	ReadTimeout     *internal.Duration `toml:"read_timeout"`
 	KeepAlivePeriod *internal.Duration `toml:"keep_alive_period"`
 	tlsint.ServerConfig
@@ -207,11 +209,11 @@ func (sl *SocketListener) SampleConfig() string {
   ## Enables client authentication if set.
   # tls_allowed_cacerts = ["/etc/telegraf/clientca.pem"]
 
-  ## Maximum socket buffer size (in bytes when no unit specified).
+  ## Maximum socket buffer size in bytes.
   ## For stream sockets, once the buffer fills up, the sender will start backing up.
   ## For datagram sockets, once the buffer fills up, metrics will start dropping.
   ## Defaults to the OS default.
-  # read_buffer_size = "64KiB"
+  # read_buffer_size = 65535
 
   ## Period between keep alive probes.
   ## Only applies to TCP sockets.
@@ -284,9 +286,9 @@ func (sl *SocketListener) Start(acc telegraf.Accumulator) error {
 			return err
 		}
 
-		if sl.ReadBufferSize.Size > 0 {
+		if sl.ReadBufferSize > 0 {
 			if srb, ok := pc.(setReadBufferer); ok {
-				srb.SetReadBuffer(int(sl.ReadBufferSize.Size))
+				srb.SetReadBuffer(sl.ReadBufferSize)
 			} else {
 				log.Printf("W! Unable to set read buffer on a %s socket", spl[0])
 			}

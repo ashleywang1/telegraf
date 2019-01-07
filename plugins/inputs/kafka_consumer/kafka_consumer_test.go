@@ -1,14 +1,13 @@
 package kafka_consumer
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/Shopify/sarama"
-	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
+
+	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,106 +18,46 @@ const (
 	invalidMsg      = "cpu_load_short,host=server01 1422568543702900257\n"
 )
 
-type TestConsumer struct {
-	errors   chan error
-	messages chan *sarama.ConsumerMessage
-}
-
-func (c *TestConsumer) Errors() <-chan error {
-	return c.errors
-}
-
-func (c *TestConsumer) Messages() <-chan *sarama.ConsumerMessage {
-	return c.messages
-}
-
-func (c *TestConsumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
-}
-
-func (c *TestConsumer) Close() error {
-	return nil
-}
-
-func (c *TestConsumer) Inject(msg *sarama.ConsumerMessage) {
-	c.messages <- msg
-}
-
-func newTestKafka() (*Kafka, *TestConsumer) {
-	consumer := &TestConsumer{
-		errors:   make(chan error),
-		messages: make(chan *sarama.ConsumerMessage, 1000),
-	}
+func newTestKafka() (*Kafka, chan *sarama.ConsumerMessage) {
+	in := make(chan *sarama.ConsumerMessage, 1000)
 	k := Kafka{
-		cluster:                consumer,
-		ConsumerGroup:          "test",
-		Topics:                 []string{"telegraf"},
-		Brokers:                []string{"localhost:9092"},
-		Offset:                 "oldest",
-		MaxUndeliveredMessages: defaultMaxUndeliveredMessages,
-		doNotCommitMsgs:        true,
-		messages:               make(map[telegraf.TrackingID]*sarama.ConsumerMessage),
+		ConsumerGroup:   "test",
+		Topics:          []string{"telegraf"},
+		Brokers:         []string{"localhost:9092"},
+		Offset:          "oldest",
+		in:              in,
+		doNotCommitMsgs: true,
+		errs:            make(chan error, 1000),
+		done:            make(chan struct{}),
 	}
-	return &k, consumer
-}
-
-func newTestKafkaWithTopicTag() (*Kafka, *TestConsumer) {
-	consumer := &TestConsumer{
-		errors:   make(chan error),
-		messages: make(chan *sarama.ConsumerMessage, 1000),
-	}
-	k := Kafka{
-		cluster:                consumer,
-		ConsumerGroup:          "test",
-		Topics:                 []string{"telegraf"},
-		Brokers:                []string{"localhost:9092"},
-		Offset:                 "oldest",
-		MaxUndeliveredMessages: defaultMaxUndeliveredMessages,
-		doNotCommitMsgs:        true,
-		messages:               make(map[telegraf.TrackingID]*sarama.ConsumerMessage),
-		TopicTag:               "topic",
-	}
-	return &k, consumer
+	return &k, in
 }
 
 // Test that the parser parses kafka messages into points
 func TestRunParser(t *testing.T) {
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 
 	k.parser, _ = parsers.NewInfluxParser()
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(testMsg))
+	go k.receiver()
+	in <- saramaMsg(testMsg)
 	acc.Wait(1)
 
 	assert.Equal(t, acc.NFields(), 1)
-}
-
-// Test that the parser parses kafka messages into points
-// and adds the topic tag
-func TestRunParserWithTopic(t *testing.T) {
-	k, consumer := newTestKafkaWithTopicTag()
-	acc := testutil.Accumulator{}
-	ctx := context.Background()
-
-	k.parser, _ = parsers.NewInfluxParser()
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsgWithTopic(testMsg, "test_topic"))
-	acc.Wait(1)
-
-	assert.Equal(t, acc.NFields(), 1)
-	assert.True(t, acc.HasTag("cpu_load_short", "topic"))
 }
 
 // Test that the parser ignores invalid messages
 func TestRunParserInvalidMsg(t *testing.T) {
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 
 	k.parser, _ = parsers.NewInfluxParser()
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(invalidMsg))
+	go k.receiver()
+	in <- saramaMsg(invalidMsg)
 	acc.WaitError(1)
 
 	assert.Equal(t, acc.NFields(), 0)
@@ -127,14 +66,15 @@ func TestRunParserInvalidMsg(t *testing.T) {
 // Test that overlong messages are dropped
 func TestDropOverlongMsg(t *testing.T) {
 	const maxMessageLen = 64 * 1024
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	k.MaxMessageLen = maxMessageLen
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 	overlongMsg := strings.Repeat("v", maxMessageLen+1)
 
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(overlongMsg))
+	go k.receiver()
+	in <- saramaMsg(overlongMsg)
 	acc.WaitError(1)
 
 	assert.Equal(t, acc.NFields(), 0)
@@ -142,13 +82,14 @@ func TestDropOverlongMsg(t *testing.T) {
 
 // Test that the parser parses kafka messages into points
 func TestRunParserAndGather(t *testing.T) {
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 
 	k.parser, _ = parsers.NewInfluxParser()
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(testMsg))
+	go k.receiver()
+	in <- saramaMsg(testMsg)
 	acc.Wait(1)
 
 	acc.GatherError(k.Gather)
@@ -160,13 +101,14 @@ func TestRunParserAndGather(t *testing.T) {
 
 // Test that the parser parses kafka messages into points
 func TestRunParserAndGatherGraphite(t *testing.T) {
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 
 	k.parser, _ = parsers.NewGraphiteParser("_", []string{}, nil)
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(testMsgGraphite))
+	go k.receiver()
+	in <- saramaMsg(testMsgGraphite)
 	acc.Wait(1)
 
 	acc.GatherError(k.Gather)
@@ -178,16 +120,14 @@ func TestRunParserAndGatherGraphite(t *testing.T) {
 
 // Test that the parser parses kafka messages into points
 func TestRunParserAndGatherJSON(t *testing.T) {
-	k, consumer := newTestKafka()
+	k, in := newTestKafka()
 	acc := testutil.Accumulator{}
-	ctx := context.Background()
+	k.acc = &acc
+	defer close(k.done)
 
-	k.parser, _ = parsers.NewParser(&parsers.Config{
-		DataFormat: "json",
-		MetricName: "kafka_json_test",
-	})
-	go k.receiver(ctx, &acc)
-	consumer.Inject(saramaMsg(testMsgJSON))
+	k.parser, _ = parsers.NewJSONParser("kafka_json_test", []string{}, nil)
+	go k.receiver()
+	in <- saramaMsg(testMsgJSON)
 	acc.Wait(1)
 
 	acc.GatherError(k.Gather)
@@ -206,15 +146,5 @@ func saramaMsg(val string) *sarama.ConsumerMessage {
 		Value:     []byte(val),
 		Offset:    0,
 		Partition: 0,
-	}
-}
-
-func saramaMsgWithTopic(val string, topic string) *sarama.ConsumerMessage {
-	return &sarama.ConsumerMessage{
-		Key:       nil,
-		Value:     []byte(val),
-		Offset:    0,
-		Partition: 0,
-		Topic:     topic,
 	}
 }

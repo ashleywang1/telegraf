@@ -38,6 +38,7 @@ func TestReadsMetricsFromKafka(t *testing.T) {
 		ConsumerGroup: "telegraf_test_consumers",
 		Topics:        []string{testTopic},
 		Brokers:       brokerPeers,
+		PointBuffer:   100000,
 		Offset:        "oldest",
 	}
 	p, _ := parsers.NewInfluxParser()

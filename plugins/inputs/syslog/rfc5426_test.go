@@ -15,8 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func getTestCasesForRFC5426() []testCasePacket {
-	testCases := []testCasePacket{
+type testCase5426 struct {
+	name           string
+	data           []byte
+	wantBestEffort *testutil.Metric
+	wantStrict     *testutil.Metric
+	werr           bool
+}
+
+func getTestCasesForRFC5426() []testCase5426 {
+	testCases := []testCase5426{
 		{
 			name: "empty",
 			data: []byte(""),
@@ -194,41 +202,20 @@ func getTestCasesForRFC5426() []testCasePacket {
 			},
 			werr: true,
 		},
-		{
-			name: "trim message",
-			data: []byte("<1>1 - - - - - - \tA\n"),
-			wantBestEffort: &testutil.Metric{
-				Measurement: "syslog",
-				Fields: map[string]interface{}{
-					"version":       uint16(1),
-					"message":       "\tA",
-					"facility_code": 0,
-					"severity_code": 1,
-				},
-				Tags: map[string]string{
-					"severity": "alert",
-					"facility": "kern",
-				},
-				Time: defaultTime,
-			},
-			wantStrict: &testutil.Metric{
-				Measurement: "syslog",
-				Fields: map[string]interface{}{
-					"version":       uint16(1),
-					"message":       "\tA",
-					"facility_code": 0,
-					"severity_code": 1,
-				},
-				Tags: map[string]string{
-					"severity": "alert",
-					"facility": "kern",
-				},
-				Time: defaultTime,
-			},
-		},
 	}
 
 	return testCases
+}
+
+func newUDPSyslogReceiver(address string, bestEffort bool) *Syslog {
+	return &Syslog{
+		Address: address,
+		now: func() time.Time {
+			return defaultTime
+		},
+		BestEffort: bestEffort,
+		Separator:  "_",
+	}
 }
 
 func testRFC5426(t *testing.T, protocol string, address string, bestEffort bool) {
@@ -247,18 +234,12 @@ func testRFC5426(t *testing.T, protocol string, address string, bestEffort bool)
 			// Connect
 			conn, err := net.Dial(protocol, address)
 			require.NotNil(t, conn)
+			defer conn.Close()
 			require.Nil(t, err)
 
 			// Write
-			_, err = conn.Write(tc.data)
-			conn.Close()
-			if err != nil {
-				if err, ok := err.(*net.OpError); ok {
-					if err.Err.Error() == "write: message too long" {
-						return
-					}
-				}
-			}
+			_, e := conn.Write(tc.data)
+			require.Nil(t, e)
 
 			// Waiting ...
 			if tc.wantStrict == nil && tc.werr || bestEffort && tc.werr {

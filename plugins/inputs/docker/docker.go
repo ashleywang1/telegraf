@@ -129,7 +129,18 @@ func (d *Docker) SampleConfig() string { return sampleConfig }
 
 func (d *Docker) Gather(acc telegraf.Accumulator) error {
 	if d.client == nil {
-		c, err := d.getNewClient()
+		var c Client
+		var err error
+		if d.Endpoint == "ENV" {
+			c, err = d.newEnvClient()
+		} else {
+			tlsConfig, err := d.ClientConfig.TLSConfig()
+			if err != nil {
+				return err
+			}
+
+			c, err = d.newClient(d.Endpoint, tlsConfig)
+		}
 		if err != nil {
 			return err
 		}
@@ -208,6 +219,7 @@ func (d *Docker) Gather(acc telegraf.Accumulator) error {
 }
 
 func (d *Docker) gatherSwarmInfo(acc telegraf.Accumulator) error {
+
 	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout.Duration)
 	defer cancel()
 	services, err := d.client.ServiceList(ctx, types.ServiceListOptions{})
@@ -216,6 +228,7 @@ func (d *Docker) gatherSwarmInfo(acc telegraf.Accumulator) error {
 	}
 
 	if len(services) > 0 {
+
 		tasks, err := d.client.TaskList(ctx, types.TaskListOptions{})
 		if err != nil {
 			return err
@@ -352,18 +365,10 @@ func (d *Docker) gatherContainer(
 ) error {
 	var v *types.StatsJSON
 	// Parse container name
-	var cname string
-	for _, name := range container.Names {
-		trimmedName := strings.TrimPrefix(name, "/")
-		match := d.containerFilter.Match(trimmedName)
-		if match {
-			cname = trimmedName
-			break
-		}
-	}
-
-	if cname == "" {
-		return nil
+	cname := "unknown"
+	if len(container.Names) > 0 {
+		// Not sure what to do with other names, just take the first.
+		cname = strings.TrimPrefix(container.Names[0], "/")
 	}
 
 	// the image name sometimes has a version part, or a private repo
@@ -386,6 +391,10 @@ func (d *Docker) gatherContainer(
 		"container_version": imageVersion,
 	}
 
+	if !d.containerFilter.Match(cname) {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout.Duration)
 	defer cancel()
 	r, err := d.client.ContainerStats(ctx, container.ID, false)
@@ -401,11 +410,6 @@ func (d *Docker) gatherContainer(
 		return fmt.Errorf("Error decoding: %s", err.Error())
 	}
 	daemonOSType := r.OSType
-
-	// use common (printed at `docker ps`) name for container
-	if v.Name != "" {
-		tags["container_name"] = strings.TrimPrefix(v.Name, "/")
-	}
 
 	// Add labels to tags
 	for k, label := range container.Labels {
@@ -432,38 +436,20 @@ func (d *Docker) gatherContainer(
 		}
 	}
 
-	if info.State != nil {
-		tags["container_status"] = info.State.Status
-		statefields := map[string]interface{}{
-			"oomkilled": info.State.OOMKilled,
-			"pid":       info.State.Pid,
-			"exitcode":  info.State.ExitCode,
+	if info.State.Health != nil {
+		healthfields := map[string]interface{}{
+			"health_status":  info.State.Health.Status,
+			"failing_streak": info.ContainerJSONBase.State.Health.FailingStreak,
 		}
-		container_time, err := time.Parse(time.RFC3339, info.State.StartedAt)
-		if err == nil && !container_time.IsZero() {
-			statefields["started_at"] = container_time.UnixNano()
-		}
-		container_time, err = time.Parse(time.RFC3339, info.State.FinishedAt)
-		if err == nil && !container_time.IsZero() {
-			statefields["finished_at"] = container_time.UnixNano()
-		}
-		acc.AddFields("docker_container_status", statefields, tags, time.Now())
-
-		if info.State.Health != nil {
-			healthfields := map[string]interface{}{
-				"health_status":  info.State.Health.Status,
-				"failing_streak": info.ContainerJSONBase.State.Health.FailingStreak,
-			}
-			acc.AddFields("docker_container_health", healthfields, tags, time.Now())
-		}
+		acc.AddFields("docker_container_health", healthfields, tags, time.Now())
 	}
 
-	parseContainerStats(v, acc, tags, container.ID, d.PerDevice, d.Total, daemonOSType)
+	gatherContainerStats(v, acc, tags, container.ID, d.PerDevice, d.Total, daemonOSType)
 
 	return nil
 }
 
-func parseContainerStats(
+func gatherContainerStats(
 	stat *types.StatsJSON,
 	acc telegraf.Accumulator,
 	tags map[string]string,
@@ -819,19 +805,6 @@ func (d *Docker) createContainerStateFilters() error {
 	}
 	d.stateFilter = filter
 	return nil
-}
-
-func (d *Docker) getNewClient() (Client, error) {
-	if d.Endpoint == "ENV" {
-		return d.newEnvClient()
-	}
-
-	tlsConfig, err := d.ClientConfig.TLSConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	return d.newClient(d.Endpoint, tlsConfig)
 }
 
 func init() {

@@ -52,14 +52,17 @@ func TestAerospikeStatisticsPartialErr(t *testing.T) {
 
 func TestAerospikeParseValue(t *testing.T) {
 	// uint64 with value bigger than int64 max
-	val := parseValue("18446744041841121751")
-	require.Equal(t, uint64(18446744041841121751), val)
+	val, err := parseValue("18446744041841121751")
+	assert.Nil(t, val)
+	assert.Error(t, err)
 
 	// int values
-	val = parseValue("42")
-	require.Equal(t, val, int64(42), "must be parsed as int")
+	val, err = parseValue("42")
+	assert.NoError(t, err)
+	assert.Equal(t, val, int64(42), "must be parsed as int")
 
 	// string values
-	val = parseValue("BB977942A2CA502")
-	require.Equal(t, val, `BB977942A2CA502`, "must be left as string")
+	val, err = parseValue("BB977942A2CA502")
+	assert.NoError(t, err)
+	assert.Equal(t, val, `BB977942A2CA502`, "must be left as string")
 }

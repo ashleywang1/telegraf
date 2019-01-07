@@ -1,0 +1,14 @@
+<goblin_telegraf>
+  <group owner="MapNocc">
+    <criteria network="freeflow" />
+    <criteria network="essl" />
+    <whitelist>
+      <table tablename="example_table1" />
+      <table tablename="example_table2" />
+    </whitelist>
+    <blacklist>
+      <table tablename="example_table3" />
+      <table tablename="example_table4" />
+    </blacklist>
+  </group>
+</goblin_telegraf>

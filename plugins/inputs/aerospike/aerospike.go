@@ -2,6 +2,8 @@ package aerospike
 
 import (
 	"crypto/tls"
+	"errors"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -118,8 +120,12 @@ func (a *Aerospike) gatherServer(hostport string, acc telegraf.Accumulator) erro
 			return err
 		}
 		for k, v := range stats {
-			val := parseValue(v)
-			fields[strings.Replace(k, "-", "_", -1)] = val
+			val, err := parseValue(v)
+			if err == nil {
+				fields[strings.Replace(k, "-", "_", -1)] = val
+			} else {
+				log.Printf("I! skipping aerospike field %v with int64 overflow: %q", k, v)
+			}
 		}
 		acc.AddFields("aerospike_node", fields, tags, time.Now())
 
@@ -146,8 +152,12 @@ func (a *Aerospike) gatherServer(hostport string, acc telegraf.Accumulator) erro
 				if len(parts) < 2 {
 					continue
 				}
-				val := parseValue(parts[1])
-				nFields[strings.Replace(parts[0], "-", "_", -1)] = val
+				val, err := parseValue(parts[1])
+				if err == nil {
+					nFields[strings.Replace(parts[0], "-", "_", -1)] = val
+				} else {
+					log.Printf("I! skipping aerospike field %v with int64 overflow: %q", parts[0], parts[1])
+				}
 			}
 			acc.AddFields("aerospike_namespace", nFields, nTags, time.Now())
 		}
@@ -155,16 +165,16 @@ func (a *Aerospike) gatherServer(hostport string, acc telegraf.Accumulator) erro
 	return nil
 }
 
-func parseValue(v string) interface{} {
+func parseValue(v string) (interface{}, error) {
 	if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
-		return parsed
-	} else if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
-		return parsed
+		return parsed, nil
+	} else if _, err := strconv.ParseUint(v, 10, 64); err == nil {
+		// int64 overflow, yet valid uint64
+		return nil, errors.New("Number is too large")
 	} else if parsed, err := strconv.ParseBool(v); err == nil {
-		return parsed
+		return parsed, nil
 	} else {
-		// leave as string
-		return v
+		return v, nil
 	}
 }
 

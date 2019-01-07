@@ -385,8 +385,8 @@ func TestGatherFilterNode(t *testing.T) {
 					return &Summary{
 						Cluster: "a",
 						Slaves: []Slave{
-							{ID: "x"},
-							{ID: "y"},
+							Slave{ID: "x"},
+							Slave{ID: "y"},
 						},
 					}, nil
 				},

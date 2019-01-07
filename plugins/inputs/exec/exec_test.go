@@ -93,10 +93,7 @@ func (r runnerMock) Run(e *Exec, command string, acc telegraf.Accumulator) ([]by
 }
 
 func TestExec(t *testing.T) {
-	parser, _ := parsers.NewParser(&parsers.Config{
-		DataFormat: "json",
-		MetricName: "exec",
-	})
+	parser, _ := parsers.NewJSONParser("exec", []string{}, nil)
 	e := &Exec{
 		runner:   newRunnerMock([]byte(validJson), nil),
 		Commands: []string{"testcommand arg1"},
@@ -122,10 +119,7 @@ func TestExec(t *testing.T) {
 }
 
 func TestExecMalformed(t *testing.T) {
-	parser, _ := parsers.NewParser(&parsers.Config{
-		DataFormat: "json",
-		MetricName: "exec",
-	})
+	parser, _ := parsers.NewJSONParser("exec", []string{}, nil)
 	e := &Exec{
 		runner:   newRunnerMock([]byte(malformedJson), nil),
 		Commands: []string{"badcommand arg1"},
@@ -138,10 +132,7 @@ func TestExecMalformed(t *testing.T) {
 }
 
 func TestCommandError(t *testing.T) {
-	parser, _ := parsers.NewParser(&parsers.Config{
-		DataFormat: "json",
-		MetricName: "exec",
-	})
+	parser, _ := parsers.NewJSONParser("exec", []string{}, nil)
 	e := &Exec{
 		runner:   newRunnerMock(nil, fmt.Errorf("exit status code 1")),
 		Commands: []string{"badcommand"},

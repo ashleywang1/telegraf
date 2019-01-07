@@ -49,7 +49,7 @@ func TestMysqlGetDSNTag(t *testing.T) {
 		},
 		{
 			"tcp(localhost)/",
-			"localhost:3306",
+			"localhost",
 		},
 		{
 			"root:passwd@tcp(192.168.1.1:3306)/?tls=false",

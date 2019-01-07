@@ -10,7 +10,6 @@ import (
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
 )
@@ -24,7 +23,6 @@ type PS interface {
 	VMStat() (*mem.VirtualMemoryStat, error)
 	SwapStat() (*mem.SwapMemoryStat, error)
 	NetConnections() ([]net.ConnectionStat, error)
-	Temperature() ([]host.TemperatureStat, error)
 }
 
 type PSDiskDeps interface {
@@ -41,17 +39,17 @@ func add(acc telegraf.Accumulator,
 	}
 }
 
-func NewSystemPS() *SystemPS {
-	return &SystemPS{&SystemPSDisk{}}
+func newSystemPS() *systemPS {
+	return &systemPS{&systemPSDisk{}}
 }
 
-type SystemPS struct {
+type systemPS struct {
 	PSDiskDeps
 }
 
-type SystemPSDisk struct{}
+type systemPSDisk struct{}
 
-func (s *SystemPS) CPUTimes(perCPU, totalCPU bool) ([]cpu.TimesStat, error) {
+func (s *systemPS) CPUTimes(perCPU, totalCPU bool) ([]cpu.TimesStat, error) {
 	var cpuTimes []cpu.TimesStat
 	if perCPU {
 		if perCPUTimes, err := cpu.Times(true); err == nil {
@@ -70,7 +68,7 @@ func (s *SystemPS) CPUTimes(perCPU, totalCPU bool) ([]cpu.TimesStat, error) {
 	return cpuTimes, nil
 }
 
-func (s *SystemPS) DiskUsage(
+func (s *systemPS) DiskUsage(
 	mountPointFilter []string,
 	fstypeExclude []string,
 ) ([]*disk.UsageStat, []*disk.PartitionStat, error) {
@@ -141,19 +139,19 @@ func (s *SystemPS) DiskUsage(
 	return usage, partitions, nil
 }
 
-func (s *SystemPS) NetProto() ([]net.ProtoCountersStat, error) {
+func (s *systemPS) NetProto() ([]net.ProtoCountersStat, error) {
 	return net.ProtoCounters(nil)
 }
 
-func (s *SystemPS) NetIO() ([]net.IOCountersStat, error) {
+func (s *systemPS) NetIO() ([]net.IOCountersStat, error) {
 	return net.IOCounters(true)
 }
 
-func (s *SystemPS) NetConnections() ([]net.ConnectionStat, error) {
+func (s *systemPS) NetConnections() ([]net.ConnectionStat, error) {
 	return net.Connections("all")
 }
 
-func (s *SystemPS) DiskIO(names []string) (map[string]disk.IOCountersStat, error) {
+func (s *systemPS) DiskIO(names []string) (map[string]disk.IOCountersStat, error) {
 	m, err := disk.IOCounters(names...)
 	if err == internal.NotImplementedError {
 		return nil, nil
@@ -162,30 +160,26 @@ func (s *SystemPS) DiskIO(names []string) (map[string]disk.IOCountersStat, error
 	return m, err
 }
 
-func (s *SystemPS) VMStat() (*mem.VirtualMemoryStat, error) {
+func (s *systemPS) VMStat() (*mem.VirtualMemoryStat, error) {
 	return mem.VirtualMemory()
 }
 
-func (s *SystemPS) SwapStat() (*mem.SwapMemoryStat, error) {
+func (s *systemPS) SwapStat() (*mem.SwapMemoryStat, error) {
 	return mem.SwapMemory()
 }
 
-func (s *SystemPS) Temperature() ([]host.TemperatureStat, error) {
-	return host.SensorsTemperatures()
-}
-
-func (s *SystemPSDisk) Partitions(all bool) ([]disk.PartitionStat, error) {
+func (s *systemPSDisk) Partitions(all bool) ([]disk.PartitionStat, error) {
 	return disk.Partitions(all)
 }
 
-func (s *SystemPSDisk) OSGetenv(key string) string {
+func (s *systemPSDisk) OSGetenv(key string) string {
 	return os.Getenv(key)
 }
 
-func (s *SystemPSDisk) OSStat(name string) (os.FileInfo, error) {
+func (s *systemPSDisk) OSStat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
 
-func (s *SystemPSDisk) PSDiskUsage(path string) (*disk.UsageStat, error) {
+func (s *systemPSDisk) PSDiskUsage(path string) (*disk.UsageStat, error) {
 	return disk.Usage(path)
 }

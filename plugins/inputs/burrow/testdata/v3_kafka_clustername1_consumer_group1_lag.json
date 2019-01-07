@@ -10,7 +10,7 @@
       {
         "topic": "topicA",
         "partition": 0,
-        "owner": "kafka1",
+        "owner": "kafka",
         "status": "OK",
         "start": {
           "offset": 431323195,
@@ -28,7 +28,7 @@
       {
         "topic": "topicA",
         "partition": 1,
-        "owner": "kafka2",
+        "owner": "kafka",
         "status": "OK",
         "start": {
           "offset": 431322962,
@@ -46,7 +46,7 @@
       {
         "topic": "topicA",
         "partition": 2,
-        "owner": "kafka3",
+        "owner": "kafka",
         "status": "OK",
         "start": {
           "offset": 428636563,

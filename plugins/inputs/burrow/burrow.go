@@ -116,7 +116,6 @@ type (
 		Start      apiStatusResponseLagItem `json:"start"`
 		End        apiStatusResponseLagItem `json:"end"`
 		CurrentLag int64                    `json:"current_lag"`
-		Owner      string                   `json:"owner"`
 	}
 
 	// response: lag field item
@@ -397,11 +396,13 @@ func (b *burrow) genGroupStatusMetrics(r *apiResponse, cluster, group string, ac
 		partitionCount = len(r.Status.Partitions)
 	}
 
-	// get max timestamp and total offset from partitions list
+	// get max timestamp and offset from partitions list
 	offset := int64(0)
 	timestamp := int64(0)
 	for _, partition := range r.Status.Partitions {
-		offset += partition.End.Offset
+		if partition.End.Offset > offset {
+			offset = partition.End.Offset
+		}
 		if partition.End.Timestamp > timestamp {
 			timestamp = partition.End.Timestamp
 		}
@@ -446,7 +447,6 @@ func (b *burrow) genGroupLagMetrics(r *apiResponse, cluster, group string, acc t
 				"group":     group,
 				"topic":     partition.Topic,
 				"partition": strconv.FormatInt(int64(partition.Partition), 10),
-				"owner":     partition.Owner,
 			},
 		)
 	}

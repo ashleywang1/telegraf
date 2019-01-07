@@ -1,0 +1,6 @@
+1520546801
+example table
+col1, col2, col3, col4
+ip,(agg)str,(min)int!,float?
+ip,string,int,float
+198.18.88.134,1520546589_26777_127_0_1_1,25228000,4.0

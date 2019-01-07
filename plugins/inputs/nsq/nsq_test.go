@@ -19,8 +19,9 @@ func TestNSQStatsV1(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	n := New()
-	n.Endpoints = []string{ts.URL}
+	n := &NSQ{
+		Endpoints: []string{ts.URL},
+	}
 
 	var acc testutil.Accumulator
 	err := acc.GatherError(n.Gather)
@@ -275,8 +276,9 @@ func TestNSQStatsPreV1(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	n := New()
-	n.Endpoints = []string{ts.URL}
+	n := &NSQ{
+		Endpoints: []string{ts.URL},
+	}
 
 	var acc testutil.Accumulator
 	err := acc.GatherError(n.Gather)

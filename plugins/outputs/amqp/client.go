@@ -55,7 +55,7 @@ func Connect(config *ClientConfig) (*client, error) {
 			log.Printf("D! Output [amqp] connected to %q", broker)
 			break
 		}
-		log.Printf("D! Output [amqp] error connecting to %q - %s", broker, err.Error())
+		log.Printf("D! Output [amqp] error connecting to %q", broker)
 	}
 
 	if client.conn == nil {

@@ -158,11 +158,8 @@ func (pb *pointBuilder) fillFields(name string, value interface{}, fieldMap map[
 	if valueMap, ok := value.(map[string]interface{}); ok {
 		// keep going until we get to something that is not a map
 		for key, innerValue := range valueMap {
-			if _, ok := innerValue.([]interface{}); ok {
-				continue
-			}
-
 			var innerName string
+
 			if name == "" {
 				innerName = pb.metric.FieldPrefix + key
 			} else {
@@ -172,10 +169,6 @@ func (pb *pointBuilder) fillFields(name string, value interface{}, fieldMap map[
 			pb.fillFields(innerName, innerValue, fieldMap)
 		}
 
-		return
-	}
-
-	if _, ok := value.([]interface{}); ok {
 		return
 	}
 

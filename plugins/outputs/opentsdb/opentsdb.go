@@ -22,7 +22,6 @@ var (
 		`%`, "-",
 		"#", "-",
 		"$", "-")
-	defaultHttpPath  = "/api/put"
 	defaultSeperator = "_"
 )
 
@@ -32,8 +31,7 @@ type OpenTSDB struct {
 	Host string
 	Port int
 
-	HttpBatchSize int // deprecated httpBatchSize form in 1.8
-	HttpPath      string
+	HttpBatchSize int
 
 	Debug bool
 
@@ -54,11 +52,7 @@ var sampleConfig = `
 
   ## Number of data points to send to OpenTSDB in Http requests.
   ## Not used with telnet API.
-  http_batch_size = 50
-
-  ## URI Path for Http requests to OpenTSDB.
-  ## Used in cases where OpenTSDB is located behind a reverse proxy.
-  http_path = "/api/put"
+  httpBatchSize = 50
 
   ## Debug true - Prints OpenTSDB communication
   debug = false
@@ -127,7 +121,6 @@ func (o *OpenTSDB) WriteHttp(metrics []telegraf.Metric, u *url.URL) error {
 		Scheme:    u.Scheme,
 		User:      u.User,
 		BatchSize: o.HttpBatchSize,
-		Path:      o.HttpPath,
 		Debug:     o.Debug,
 	}
 
@@ -213,10 +206,7 @@ func (o *OpenTSDB) WriteTelnet(metrics []telegraf.Metric, u *url.URL) error {
 func cleanTags(tags map[string]string) map[string]string {
 	tagSet := make(map[string]string, len(tags))
 	for k, v := range tags {
-		val := sanitize(v)
-		if val != "" {
-			tagSet[sanitize(k)] = val
-		}
+		tagSet[sanitize(k)] = sanitize(v)
 	}
 	return tagSet
 }
@@ -270,7 +260,6 @@ func sanitize(value string) string {
 func init() {
 	outputs.Add("opentsdb", func() telegraf.Output {
 		return &OpenTSDB{
-			HttpPath:  defaultHttpPath,
 			Separator: defaultSeperator,
 		}
 	})

@@ -19,8 +19,14 @@ type Postgresql struct {
 	postgresql.Service
 	Databases      []string
 	AdditionalTags []string
-	Query          query
-	Debug          bool
+	Query          []struct {
+		Sqlquery    string
+		Version     int
+		Withdbname  bool
+		Tagvalue    string
+		Measurement string
+	}
+	Debug bool
 }
 
 type query []struct {
@@ -121,13 +127,15 @@ func (p *Postgresql) Gather(acc telegraf.Accumulator) error {
 	)
 
 	// Retreiving the database version
-	query = `SELECT setting::integer / 100 AS version FROM pg_settings WHERE name = 'server_version_num'`
+
+	query = `select substring(setting from 1 for 3) as version from pg_settings where name='server_version_num'`
 	if err = p.DB.QueryRow(query).Scan(&db_version); err != nil {
 		db_version = 0
 	}
 
 	// We loop in order to process each query
 	// Query is not run if Database version does not match the query version.
+
 	for i := range p.Query {
 		sql_query = p.Query[i].Sqlquery
 		tag_value = p.Query[i].Tagvalue
@@ -213,14 +221,9 @@ func (p *Postgresql) accRow(meas_name string, row scanner, acc telegraf.Accumula
 		return err
 	}
 
-	if c, ok := columnMap["datname"]; ok && *c != nil {
+	if columnMap["datname"] != nil {
 		// extract the database name from the column map
-		switch datname := (*c).(type) {
-		case string:
-			dbname.WriteString(datname)
-		default:
-			dbname.WriteString("postgres")
-		}
+		dbname.WriteString((*columnMap["datname"]).(string))
 	} else {
 		dbname.WriteString("postgres")
 	}
@@ -280,7 +283,6 @@ func init() {
 				MaxLifetime: internal.Duration{
 					Duration: 0,
 				},
-				IsPgBouncer: false,
 			},
 		}
 	})

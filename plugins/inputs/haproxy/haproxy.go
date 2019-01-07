@@ -23,8 +23,6 @@ import (
 type haproxy struct {
 	Servers        []string
 	KeepFieldNames bool
-	Username       string
-	Password       string
 	tls.ClientConfig
 
 	client *http.Client
@@ -38,10 +36,6 @@ var sampleConfig = `
 
   ## If no servers are specified, then default to 127.0.0.1:1936/haproxy?stats
   servers = ["http://myhaproxy.com:1936/haproxy?stats"]
-
-  ## Credentials for basic HTTP authentication
-  # username = "admin"
-  # password = "admin"
 
   ## You can also use local socket with standard wildcard globbing.
   ## Server address not starting with 'http' will be treated as a possible
@@ -169,12 +163,6 @@ func (g *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 	if u.User != nil {
 		p, _ := u.User.Password()
 		req.SetBasicAuth(u.User.Username(), p)
-		u.User = &url.Userinfo{}
-		addr = u.String()
-	}
-
-	if g.Username != "" || g.Password != "" {
-		req.SetBasicAuth(g.Username, g.Password)
 	}
 
 	res, err := g.client.Do(req)

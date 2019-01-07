@@ -117,17 +117,21 @@ func TestGatheringTimeout(t *testing.T) {
 	var acc testutil.Accumulator
 	dnsConfig.Port = 60054
 	dnsConfig.Timeout = 1
+	var err error
 
 	channel := make(chan error, 1)
 	go func() {
 		channel <- acc.GatherError(dnsConfig.Gather)
 	}()
 	select {
-	case err := <-channel:
-		assert.NoError(t, err)
+	case res := <-channel:
+		err = res
 	case <-time.After(time.Second * 2):
-		assert.Fail(t, "DNS query did not timeout")
+		err = nil
 	}
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "i/o timeout")
 }
 
 func TestSettingDefaultValues(t *testing.T) {

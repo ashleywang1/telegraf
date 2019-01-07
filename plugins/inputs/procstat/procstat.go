@@ -32,7 +32,6 @@ type Procstat struct {
 	SystemdUnit string
 	CGroup      string `toml:"cgroup"`
 	PidTag      bool
-	WinService  string `toml:"win_service"`
 
 	finder PIDFinder
 
@@ -54,9 +53,6 @@ var sampleConfig = `
   # systemd_unit = "nginx.service"
   ## CGroup name or path
   # cgroup = "systemd/system.slice/nginx.service"
-
-  ## Windows service name
-  # win_service = ""
 
   ## override for process_name
   ## This is optional; default is sourced from /proc/<pid>/status
@@ -93,7 +89,6 @@ func (p *Procstat) Gather(acc telegraf.Accumulator) error {
 		case "pgrep":
 			p.createPIDFinder = NewPgrep
 		default:
-			p.PidFinder = "pgrep"
 			p.createPIDFinder = defaultPIDFinder
 		}
 
@@ -102,22 +97,7 @@ func (p *Procstat) Gather(acc telegraf.Accumulator) error {
 		p.createProcess = defaultProcess
 	}
 
-	pids, tags, err := p.findPids(acc)
-	if err != nil {
-		fields := map[string]interface{}{
-			"pid_count":   0,
-			"running":     0,
-			"result_code": 1,
-		}
-		tags := map[string]string{
-			"pid_finder": p.PidFinder,
-			"result":     "lookup_error",
-		}
-		acc.AddFields("procstat_lookup", fields, tags)
-		return err
-	}
-
-	procs, err := p.updateProcesses(pids, tags, p.procs)
+	procs, err := p.updateProcesses(p.procs)
 	if err != nil {
 		acc.AddError(fmt.Errorf("E! Error: procstat getting process, exe: [%s] pidfile: [%s] pattern: [%s] user: [%s] %s",
 			p.Exe, p.PidFile, p.Pattern, p.User, err.Error()))
@@ -125,23 +105,14 @@ func (p *Procstat) Gather(acc telegraf.Accumulator) error {
 	p.procs = procs
 
 	for _, proc := range p.procs {
-		p.addMetric(proc, acc)
+		p.addMetrics(proc, acc)
 	}
-
-	fields := map[string]interface{}{
-		"pid_count":   len(pids),
-		"running":     len(procs),
-		"result_code": 0,
-	}
-	tags["pid_finder"] = p.PidFinder
-	tags["result"] = "success"
-	acc.AddFields("procstat_lookup", fields, tags)
 
 	return nil
 }
 
 // Add metrics a single Process
-func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator) {
+func (p *Procstat) addMetrics(proc Process, acc telegraf.Accumulator) {
 	var prefix string
 	if p.Prefix != "" {
 		prefix = p.Prefix + "_"
@@ -154,14 +125,6 @@ func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator) {
 		name, err := proc.Name()
 		if err == nil {
 			proc.Tags()["process_name"] = name
-		}
-	}
-
-	//If user tag is not already set, set to actual name
-	if _, ok := proc.Tags()["user"]; !ok {
-		user, err := proc.Username()
-		if err == nil {
-			proc.Tags()["user"] = user
 		}
 	}
 
@@ -267,7 +230,12 @@ func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator) {
 }
 
 // Update monitored Processes
-func (p *Procstat) updateProcesses(pids []PID, tags map[string]string, prevInfo map[PID]Process) (map[PID]Process, error) {
+func (p *Procstat) updateProcesses(prevInfo map[PID]Process) (map[PID]Process, error) {
+	pids, tags, err := p.findPids()
+	if err != nil {
+		return nil, err
+	}
+
 	procs := make(map[PID]Process, len(prevInfo))
 
 	for _, pid := range pids {
@@ -301,6 +269,7 @@ func (p *Procstat) updateProcesses(pids []PID, tags map[string]string, prevInfo 
 
 // Create and return PIDGatherer lazily
 func (p *Procstat) getPIDFinder() (PIDFinder, error) {
+
 	if p.finder == nil {
 		f, err := p.createPIDFinder()
 		if err != nil {
@@ -312,9 +281,9 @@ func (p *Procstat) getPIDFinder() (PIDFinder, error) {
 }
 
 // Get matching PIDs and their initial tags
-func (p *Procstat) findPids(acc telegraf.Accumulator) ([]PID, map[string]string, error) {
+func (p *Procstat) findPids() ([]PID, map[string]string, error) {
 	var pids []PID
-	tags := make(map[string]string)
+	var tags map[string]string
 	var err error
 
 	f, err := p.getPIDFinder()
@@ -340,11 +309,8 @@ func (p *Procstat) findPids(acc telegraf.Accumulator) ([]PID, map[string]string,
 	} else if p.CGroup != "" {
 		pids, err = p.cgroupPIDs()
 		tags = map[string]string{"cgroup": p.CGroup}
-	} else if p.WinService != "" {
-		pids, err = p.winServicePIDs()
-		tags = map[string]string{"win_service": p.WinService}
 	} else {
-		err = fmt.Errorf("Either exe, pid_file, user, pattern, systemd_unit, cgroup, or win_service must be specified")
+		err = fmt.Errorf("Either exe, pid_file, user, pattern, systemd_unit, or cgroup must be specified")
 	}
 
 	return pids, tags, err
@@ -402,19 +368,6 @@ func (p *Procstat) cgroupPIDs() ([]PID, error) {
 		}
 		pids = append(pids, PID(pid))
 	}
-
-	return pids, nil
-}
-
-func (p *Procstat) winServicePIDs() ([]PID, error) {
-	var pids []PID
-
-	pid, err := queryPidWithWinServiceName(p.WinService)
-	if err != nil {
-		return pids, err
-	}
-
-	pids = append(pids, PID(pid))
 
 	return pids, nil
 }

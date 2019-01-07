@@ -662,10 +662,10 @@ func TestNetworkErrors(t *testing.T) {
 
 	// Connecton failed
 	h = &HTTPResponse{
-		Address:         "https:/nonexistent.nonexistent", // Any non-routable IP works here
+		Address:         "https://127.127.127.127", // Any non-routable IP works here
 		Body:            "",
 		Method:          "GET",
-		ResponseTimeout: internal.Duration{Duration: time.Second * 5},
+		ResponseTimeout: internal.Duration{Duration: time.Second * 20},
 		FollowRedirects: false,
 	}
 

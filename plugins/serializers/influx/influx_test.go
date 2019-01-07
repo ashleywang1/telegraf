@@ -23,7 +23,7 @@ var tests = []struct {
 	typeSupport FieldTypeSupport
 	input       telegraf.Metric
 	output      []byte
-	errReason   string
+	err         error
 }{
 	{
 		name: "minimal",
@@ -98,7 +98,7 @@ var tests = []struct {
 				time.Unix(0, 0),
 			),
 		),
-		errReason: NoFields,
+		err: ErrNoFields,
 	},
 	{
 		name: "float Inf",
@@ -333,8 +333,8 @@ var tests = []struct {
 				time.Unix(1519194109, 42),
 			),
 		),
-		output:    nil,
-		errReason: NeedMoreSpace,
+		output: nil,
+		err:    ErrNeedMoreSpace,
 	},
 	{
 		name: "no fields",
@@ -346,7 +346,7 @@ var tests = []struct {
 				time.Unix(0, 0),
 			),
 		),
-		errReason: NoFields,
+		err: ErrNoFields,
 	},
 	{
 		name: "procstat",
@@ -427,10 +427,7 @@ func TestSerializer(t *testing.T) {
 			serializer.SetFieldSortOrder(SortFields)
 			serializer.SetFieldTypeSupport(tt.typeSupport)
 			output, err := serializer.Serialize(tt.input)
-			if tt.errReason != "" {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errReason)
-			}
+			require.Equal(t, tt.err, err)
 			require.Equal(t, string(tt.output), string(output))
 		})
 	}

@@ -721,7 +721,7 @@ func TestSnmpTranslateCache_miss(t *testing.T) {
 
 func TestSnmpTranslateCache_hit(t *testing.T) {
 	snmpTranslateCaches = map[string]snmpTranslateCache{
-		"foo": {
+		"foo": snmpTranslateCache{
 			mibName:    "a",
 			oidNum:     "b",
 			oidText:    "c",
@@ -754,7 +754,7 @@ func TestSnmpTableCache_miss(t *testing.T) {
 
 func TestSnmpTableCache_hit(t *testing.T) {
 	snmpTableCaches = map[string]snmpTableCache{
-		"foo": {
+		"foo": snmpTableCache{
 			mibName: "a",
 			oidNum:  "b",
 			oidText: "c",

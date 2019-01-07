@@ -1,7 +1,6 @@
 package postgresql_extensible
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -18,7 +17,6 @@ func queryRunner(t *testing.T, q query) *testutil.Accumulator {
 				"host=%s user=postgres sslmode=disable",
 				testutil.GetLocalHost(),
 			),
-			IsPgBouncer: false,
 		},
 		Databases: []string{"postgres"},
 		Query:     q,
@@ -223,42 +221,4 @@ func TestPostgresqlIgnoresUnwantedColumns(t *testing.T) {
 	for col := range p.IgnoredColumns() {
 		assert.False(t, acc.HasMeasurement(col))
 	}
-}
-
-func TestAccRow(t *testing.T) {
-	p := Postgresql{}
-	var acc testutil.Accumulator
-	columns := []string{"datname", "cat"}
-
-	testRows := []fakeRow{
-		{fields: []interface{}{1, "gato"}},
-		{fields: []interface{}{nil, "gato"}},
-		{fields: []interface{}{"name", "gato"}},
-	}
-	for i := range testRows {
-		err := p.accRow("pgTEST", testRows[i], &acc, columns)
-		if err != nil {
-			t.Fatalf("Scan failed: %s", err)
-		}
-	}
-}
-
-type fakeRow struct {
-	fields []interface{}
-}
-
-func (f fakeRow) Scan(dest ...interface{}) error {
-	if len(f.fields) != len(dest) {
-		return errors.New("Nada matchy buddy")
-	}
-
-	for i, d := range dest {
-		switch d.(type) {
-		case (*interface{}):
-			*d.(*interface{}) = f.fields[i]
-		default:
-			return fmt.Errorf("Bad type %T", d)
-		}
-	}
-	return nil
 }

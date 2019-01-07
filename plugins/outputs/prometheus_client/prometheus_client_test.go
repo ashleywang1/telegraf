@@ -600,7 +600,7 @@ func TestPrometheusWritePointEmptyTag(t *testing.T) {
 
 	pClient, p, err := setupPrometheus()
 	require.NoError(t, err)
-	defer pClient.Close()
+	defer pClient.Stop()
 
 	now := time.Now()
 	tags := make(map[string]string)
@@ -675,7 +675,7 @@ func setupPrometheus() (*PrometheusClient, *prometheus_input.Prometheus, error) 
 		pTesting = NewClient()
 		pTesting.Listen = "localhost:9127"
 		pTesting.Path = "/metrics"
-		err := pTesting.Connect()
+		err := pTesting.Start()
 		if err != nil {
 			return nil, nil, err
 		}

@@ -19,14 +19,13 @@ import (
 
 type (
 	CloudWatch struct {
-		Region      string `toml:"region"`
-		AccessKey   string `toml:"access_key"`
-		SecretKey   string `toml:"secret_key"`
-		RoleARN     string `toml:"role_arn"`
-		Profile     string `toml:"profile"`
-		Filename    string `toml:"shared_credential_file"`
-		Token       string `toml:"token"`
-		EndpointURL string `toml:"endpoint_url"`
+		Region    string `toml:"region"`
+		AccessKey string `toml:"access_key"`
+		SecretKey string `toml:"secret_key"`
+		RoleARN   string `toml:"role_arn"`
+		Profile   string `toml:"profile"`
+		Filename  string `toml:"shared_credential_file"`
+		Token     string `toml:"token"`
 
 		Period      internal.Duration `toml:"period"`
 		Delay       internal.Duration `toml:"delay"`
@@ -36,8 +35,6 @@ type (
 		RateLimit   int               `toml:"ratelimit"`
 		client      cloudwatchClient
 		metricCache *MetricCache
-		windowStart time.Time
-		windowEnd   time.Time
 	}
 
 	Metric struct {
@@ -82,12 +79,6 @@ func (c *CloudWatch) SampleConfig() string {
   #profile = ""
   #shared_credential_file = ""
 
-  ## Endpoint to make request against, the correct endpoint is automatically
-  ## determined and this option should only be set if you wish to override the
-  ## default.
-  ##   ex: endpoint_url = "http://localhost:8000"
-  # endpoint_url = ""
-
   # The minimum period for Cloudwatch metrics is 1 minute (60s). However not all
   # metrics are made available to the 1 minute period. Some are collected at
   # 3 minute, 5 minute, or larger intervals. See https://aws.amazon.com/cloudwatch/faqs/#monitoring.
@@ -124,9 +115,7 @@ func (c *CloudWatch) SampleConfig() string {
   #[[inputs.cloudwatch.metrics]]
   #  names = ["Latency", "RequestCount"]
   #
-  #  ## Dimension filters for Metric.  These are optional however all dimensions
-  #  ## defined for the metric names must be specified in order to retrieve
-  #  ## the metric statistics.
+  #  ## Dimension filters for Metric (optional)
   #  [[inputs.cloudwatch.metrics.dimensions]]
   #    name = "LoadBalancerName"
   #    value = "p-example"
@@ -199,11 +188,6 @@ func (c *CloudWatch) Gather(acc telegraf.Accumulator) error {
 
 	now := time.Now()
 
-	err = c.updateWindow(now)
-	if err != nil {
-		return err
-	}
-
 	// limit concurrency or we can easily exhaust user connection limit
 	// see cloudwatch API request limits:
 	// http://docs.aws.amazon.com/AmazonCloudWatch/latest/DeveloperGuide/cloudwatch_limits.html
@@ -215,26 +199,10 @@ func (c *CloudWatch) Gather(acc telegraf.Accumulator) error {
 		<-lmtr.C
 		go func(inm *cloudwatch.Metric) {
 			defer wg.Done()
-			acc.AddError(c.gatherMetric(acc, inm))
+			acc.AddError(c.gatherMetric(acc, inm, now))
 		}(m)
 	}
 	wg.Wait()
-
-	return nil
-}
-
-func (c *CloudWatch) updateWindow(relativeTo time.Time) error {
-	windowEnd := relativeTo.Add(-c.Delay.Duration)
-
-	if c.windowEnd.IsZero() {
-		// this is the first run, no window info, so just get a single period
-		c.windowStart = windowEnd.Add(-c.Period.Duration)
-	} else {
-		// subsequent window, start where last window left off
-		c.windowStart = c.windowEnd
-	}
-
-	c.windowEnd = windowEnd
 
 	return nil
 }
@@ -254,14 +222,13 @@ func init() {
  */
 func (c *CloudWatch) initializeCloudWatch() error {
 	credentialConfig := &internalaws.CredentialConfig{
-		Region:      c.Region,
-		AccessKey:   c.AccessKey,
-		SecretKey:   c.SecretKey,
-		RoleARN:     c.RoleARN,
-		Profile:     c.Profile,
-		Filename:    c.Filename,
-		Token:       c.Token,
-		EndpointURL: c.EndpointURL,
+		Region:    c.Region,
+		AccessKey: c.AccessKey,
+		SecretKey: c.SecretKey,
+		RoleARN:   c.RoleARN,
+		Profile:   c.Profile,
+		Filename:  c.Filename,
+		Token:     c.Token,
 	}
 	configProvider := credentialConfig.Credentials()
 
@@ -314,8 +281,9 @@ func (c *CloudWatch) fetchNamespaceMetrics() ([]*cloudwatch.Metric, error) {
 func (c *CloudWatch) gatherMetric(
 	acc telegraf.Accumulator,
 	metric *cloudwatch.Metric,
+	now time.Time,
 ) error {
-	params := c.getStatisticsInput(metric)
+	params := c.getStatisticsInput(metric, now)
 	resp, err := c.client.GetMetricStatistics(params)
 	if err != nil {
 		return err
@@ -378,10 +346,12 @@ func snakeCase(s string) string {
 /*
  * Map Metric to *cloudwatch.GetMetricStatisticsInput for given timeframe
  */
-func (c *CloudWatch) getStatisticsInput(metric *cloudwatch.Metric) *cloudwatch.GetMetricStatisticsInput {
+func (c *CloudWatch) getStatisticsInput(metric *cloudwatch.Metric, now time.Time) *cloudwatch.GetMetricStatisticsInput {
+	end := now.Add(-c.Delay.Duration)
+
 	input := &cloudwatch.GetMetricStatisticsInput{
-		StartTime:  aws.Time(c.windowStart),
-		EndTime:    aws.Time(c.windowEnd),
+		StartTime:  aws.Time(end.Add(-c.Period.Duration)),
+		EndTime:    aws.Time(end),
 		MetricName: metric.MetricName,
 		Namespace:  metric.Namespace,
 		Period:     aws.Int64(int64(c.Period.Duration.Seconds())),

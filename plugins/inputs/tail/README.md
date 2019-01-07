@@ -1,4 +1,4 @@
-# Tail Input Plugin
+# tail Input Plugin
 
 The tail plugin "tails" a logfile and parses each log message.
 
@@ -49,7 +49,3 @@ The plugin expects messages in one of the
   data_format = "influx"
 ```
 
-### Metrics:
-
-Metrics are produced according to the `data_format` option.  Additionally a
-tag labeled `path` is added to the metric containing the filename being tailed.

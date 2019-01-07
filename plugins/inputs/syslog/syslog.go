@@ -10,12 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
-	"github.com/influxdata/go-syslog"
-	"github.com/influxdata/go-syslog/nontransparent"
-	"github.com/influxdata/go-syslog/octetcounting"
 	"github.com/influxdata/go-syslog/rfc5424"
+	"github.com/influxdata/go-syslog/rfc5425"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal"
 	tlsConfig "github.com/influxdata/telegraf/internal/tls"
@@ -30,10 +27,8 @@ type Syslog struct {
 	tlsConfig.ServerConfig
 	Address         string `toml:"server"`
 	KeepAlivePeriod *internal.Duration
-	MaxConnections  int
 	ReadTimeout     *internal.Duration
-	Framing         Framing
-	Trailer         nontransparent.TrailerType
+	MaxConnections  int
 	BestEffort      bool
 	Separator       string `toml:"sdparam_separator"`
 
@@ -76,19 +71,9 @@ var sampleConfig = `
   ## Only applies to stream sockets (e.g. TCP).
   # max_connections = 1024
 
-  ## Read timeout is the maximum time allowed for reading a single message (default = 5s).
+  ## Read timeout (default = 500ms).
   ## 0 means unlimited.
-  # read_timeout = "5s"
-
-  ## The framing technique with which it is expected that messages are transported (default = "octet-counting").
-  ## Whether the messages come using the octect-counting (RFC5425#section-4.3.1, RFC6587#section-3.4.1),
-  ## or the non-transparent framing technique (RFC6587#section-3.4.2).
-  ## Must be one of "octect-counting", "non-transparent".
-  # framing = "octet-counting"
-
-  ## The trailer to be expected in case of non-trasparent framing (default = "LF").
-  ## Must be one of "LF", or "NUL".
-  # trailer = "LF"
+  # read_timeout = 500ms
 
   ## Whether to parse in best effort mode or not (default = false).
   ## By default best effort parsing is off.
@@ -109,7 +94,7 @@ func (s *Syslog) SampleConfig() string {
 
 // Description returns the plugin description
 func (s *Syslog) Description() string {
-	return "Accepts syslog messages following RFC5424 format with transports as per RFC5426, RFC5425, or RFC6587"
+	return "Accepts syslog messages per RFC5425"
 }
 
 // Gather ...
@@ -217,12 +202,7 @@ func getAddressParts(a string) (string, string, error) {
 func (s *Syslog) listenPacket(acc telegraf.Accumulator) {
 	defer s.wg.Done()
 	b := make([]byte, ipMaxPacketSize)
-	var p syslog.Machine
-	if s.BestEffort {
-		p = rfc5424.NewParser(rfc5424.WithBestEffort())
-	} else {
-		p = rfc5424.NewParser()
-	}
+	p := rfc5424.NewParser()
 	for {
 		n, _, err := s.udpListener.ReadFrom(b)
 		if err != nil {
@@ -232,9 +212,13 @@ func (s *Syslog) listenPacket(acc telegraf.Accumulator) {
 			break
 		}
 
-		message, err := p.Parse(b[:n])
+		if s.ReadTimeout != nil && s.ReadTimeout.Duration > 0 {
+			s.udpListener.SetReadDeadline(time.Now().Add(s.ReadTimeout.Duration))
+		}
+
+		message, err := p.Parse(b[:n], &s.BestEffort)
 		if message != nil {
-			acc.AddFields("syslog", fields(message, s), tags(message), s.time())
+			acc.AddFields("syslog", fields(*message, s), tags(*message), s.time())
 		}
 		if err != nil {
 			acc.AddError(err)
@@ -295,38 +279,24 @@ func (s *Syslog) handle(conn net.Conn, acc telegraf.Accumulator) {
 		conn.Close()
 	}()
 
-	var p syslog.Parser
+	var p *rfc5425.Parser
 
-	emit := func(r *syslog.Result) {
-		s.store(*r, acc)
-		if s.ReadTimeout != nil && s.ReadTimeout.Duration > 0 {
-			conn.SetReadDeadline(time.Now().Add(s.ReadTimeout.Duration))
-		}
-	}
-
-	// Create parser options
-	opts := []syslog.ParserOption{
-		syslog.WithListener(emit),
-	}
 	if s.BestEffort {
-		opts = append(opts, syslog.WithBestEffort())
-	}
-
-	// Select the parser to use depeding on transport framing
-	if s.Framing == OctetCounting {
-		// Octet counting transparent framing
-		p = octetcounting.NewParser(opts...)
+		p = rfc5425.NewParser(conn, rfc5425.WithBestEffort())
 	} else {
-		// Non-transparent framing
-		opts = append(opts, nontransparent.WithTrailer(s.Trailer))
-		p = nontransparent.NewParser(opts...)
+		p = rfc5425.NewParser(conn)
 	}
-
-	p.Parse(conn)
 
 	if s.ReadTimeout != nil && s.ReadTimeout.Duration > 0 {
 		conn.SetReadDeadline(time.Now().Add(s.ReadTimeout.Duration))
 	}
+
+	p.ParseExecuting(func(r *rfc5425.Result) {
+		s.store(*r, acc)
+		if s.ReadTimeout != nil && s.ReadTimeout.Duration > 0 {
+			conn.SetReadDeadline(time.Now().Add(s.ReadTimeout.Duration))
+		}
+	})
 }
 
 func (s *Syslog) setKeepAlive(c *net.TCPConn) error {
@@ -343,16 +313,20 @@ func (s *Syslog) setKeepAlive(c *net.TCPConn) error {
 	return c.SetKeepAlivePeriod(s.KeepAlivePeriod.Duration)
 }
 
-func (s *Syslog) store(res syslog.Result, acc telegraf.Accumulator) {
+func (s *Syslog) store(res rfc5425.Result, acc telegraf.Accumulator) {
 	if res.Error != nil {
 		acc.AddError(res.Error)
 	}
+	if res.MessageError != nil {
+		acc.AddError(res.MessageError)
+	}
 	if res.Message != nil {
-		acc.AddFields("syslog", fields(res.Message, s), tags(res.Message), s.time())
+		msg := *res.Message
+		acc.AddFields("syslog", fields(msg, s), tags(msg), s.time())
 	}
 }
 
-func tags(msg syslog.Message) map[string]string {
+func tags(msg rfc5424.SyslogMessage) map[string]string {
 	ts := map[string]string{}
 
 	// Not checking assuming a minimally valid message
@@ -370,7 +344,7 @@ func tags(msg syslog.Message) map[string]string {
 	return ts
 }
 
-func fields(msg syslog.Message, s *Syslog) map[string]interface{} {
+func fields(msg rfc5424.SyslogMessage, s *Syslog) map[string]interface{} {
 	// Not checking assuming a minimally valid message
 	flds := map[string]interface{}{
 		"version": msg.Version(),
@@ -391,9 +365,7 @@ func fields(msg syslog.Message, s *Syslog) map[string]interface{} {
 	}
 
 	if msg.Message() != nil {
-		flds["message"] = strings.TrimRightFunc(*msg.Message(), func(r rune) bool {
-			return unicode.IsSpace(r)
-		})
+		flds["message"] = strings.TrimSpace(*msg.Message())
 	}
 
 	if msg.StructuredData() != nil {
@@ -444,8 +416,6 @@ func init() {
 		ReadTimeout: &internal.Duration{
 			Duration: defaultReadTimeout,
 		},
-		Framing:   OctetCounting,
-		Trailer:   nontransparent.LF,
 		Separator: "_",
 	}
 
